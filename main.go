@@ -107,6 +107,10 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
+const (
+	CLAUDE_CONFIG_DIR_ENV = "CLAUDE_CONFIG_DIR"
+)
+
 // PaneInfo holds metadata for a single tmux pane, extracted from the output
 // of "tmux list-panes -a". The Target field uses tmux's standard addressing
 // format "session_name:window_index.pane_index".
@@ -296,12 +300,12 @@ func buildProcessTree() (parentOf map[int]int, commOf map[int]string, err error)
 // Files that fail to read or parse are silently skipped (they may be
 // partially written or from an incompatible version).
 func readActiveSessions() ([]SessionJSON, error) {
-	home, err := os.UserHomeDir()
+	claudeDir, err := getClaudeDir()
 	if err != nil {
 		return nil, err
 	}
 
-	pattern := filepath.Join(home, ".claude", "sessions", "*.json")
+	pattern := filepath.Join(claudeDir, "sessions", "*.json")
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
 		return nil, err
@@ -319,6 +323,24 @@ func readActiveSessions() ([]SessionJSON, error) {
 		}
 	}
 	return sessions, nil
+}
+
+// TODO: update package comment
+//
+// getClaudeDir returns the path to the directory where Claude Code stores files.
+// getClaudeDir also respects CLAUDE_CONFIG_DIR environment variable if set, falling back to
+// ~/.claude if not.
+func getClaudeDir() (string, error) {
+	if configDir := os.Getenv(CLAUDE_CONFIG_DIR_ENV); configDir != "" {
+		return configDir, nil
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Join(home, ".claude"), nil
 }
 
 // walkToPane walks from the given pid up the process tree (via parentOf)
@@ -377,13 +399,13 @@ func hasNvimAncestor(pid, panePID int, parentOf map[int]int, commOf map[int]stri
 //
 // Returns "idle", "working", or "waiting".
 func detectStatus(sessionID, cwd string) string {
-	home, err := os.UserHomeDir()
+	claudeDir, err := getClaudeDir()
 	if err != nil {
 		return "idle"
 	}
 
 	encodedPath := strings.ReplaceAll(cwd, "/", "-")
-	jsonlPath := filepath.Join(home, ".claude", "projects", encodedPath, sessionID+".jsonl")
+	jsonlPath := filepath.Join(claudeDir, "projects", encodedPath, sessionID+".jsonl")
 
 	lines, err := readLastLines(jsonlPath, 20)
 	if err != nil {
